@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="es" class="dark h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart TV IPTV Player</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        tv: {
+                            bg: '#0a0d14',
+                            card: '#131823',
+                            border: '#20293a',
+                            focus: '#3b82f6',
+                            accent: '#60a5fa'
+                        }
+                    },
+                    boxShadow: {
+                        'glow': '0 0 25px -5px rgba(59, 130, 246, 0.5)',
+                        'glow-lg': '0 0 35px -2px rgba(59, 130, 246, 0.7)'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- HLS.js for IPTV stream parsing & playback -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* TV Focus effects */
+        .focusable {
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            outline: none !important;
+        }
+
+        .focusable.focused, .focusable:focus {
+            transform: scale(1.04);
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 25px -2px rgba(59, 130, 246, 0.6);
+            z-index: 20;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(51, 65, 85, 0.8);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(100, 116, 139, 1);
+        }
+
+        /* Animation Keyframes */
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 0.8; }
+        }
+        .animate-pulse-glow {
+            animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="h-full bg-tv-bg text-slate-100 flex overflow-hidden">
+
+    <!-- Sidebar Navigation -->
+    <aside id="sidebar" class="w-20 lg:w-64 bg-slate-900/80 backdrop-blur-xl border-r border-slate-800/80 flex flex-col justify-between p-4 z-30 transition-all duration-300">
+        <div>
+            <!-- TV Logo -->
+            <div class="flex items-center gap-3 px-3 py-4 mb-6">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/30 flex-shrink-0">
+                    <i class="fa-solid fa-tv text-xl text-white"></i>
+                </div>
+                <div class="hidden lg:block">
+                    <h1 class="font-bold text-lg leading-none text-white tracking-wide">SMART<span class="text-blue-500">IPTV</span></h1>
+                    <span class="text-xs text-slate-400 font-medium">iptv-org Powered</span>
+                </div>
+            </div>
+
+            <!-- Navigation Links -->
+            <nav class="space-y-2" id="nav-container">
+                <button data-nav="home" onclick="switchView('home')" class="nav-item focusable w-full flex items-center gap-4 px-3.5 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition font-medium border border-transparent">
+                    <i class="fa-solid fa-house text-lg w-6 text-center"></i>
+                    <span class="hidden lg:block text-sm">Inicio</span>
+                </button>
+                <button data-nav="livetv" onclick="switchView('livetv')" class="nav-item focusable w-full flex items-center gap-4 px-3.5 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition font-medium border border-transparent">
+                    <i class="fa-solid fa-play text-lg w-6 text-center"></i>
+                    <span class="hidden lg:block text-sm">En Vivo</span>
+                </button>
+                <button data-nav="categories" onclick="switchView('categories')" class="nav-item focusable w-full flex items-center gap-4 px-3.5 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition font-medium border border-transparent">
+                    <i class="fa-solid fa-layer-group text-lg w-6 text-center"></i>
+                    <span class="hidden lg:block text-sm">Categorías</span>
+                </button>
+                <button data-nav="search" onclick="switchView('search')" class="nav-item focusable w-full flex items-center gap-4 px-3.5 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition font-medium border border-transparent">
+                    <i class="fa-solid fa-magnifying-glass text-lg w-6 text-center"></i>
+                    <span class="hidden lg:block text-sm">Buscar</span>
+                </button>
+                <button data-nav="favorites" onclick="switchView('favorites')" class="nav-item focusable w-full flex items-center gap-4 px-3.5 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition font-medium border border-transparent">
+                    <i class="fa-solid fa-heart text-lg w-6 text-center"></i>
+                    <span class="hidden lg:block text-sm">Favoritos</span>
+                </button>
+                <button data-nav="settings" onclick="switchView('settings')" class="nav-item focusable w-full flex items-center gap-4 px-3.5 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition font-medium border border-transparent">
+                    <i class="fa-solid fa-gear text-lg w-6 text-center"></i>
+                    <span class="hidden lg:block text-sm">Ajustes</span>
+                </button>
+            </nav>
+        </div>
+
+        <!-- Bottom: GitHub Profile Badge + Clock + Remote Helper -->
+        <div class="space-y-3 border-t border-slate-800/80 pt-4">
+            <!-- GitHub Profile Badge (IGNOPS) -->
+            <a data-author-link href="#" target="_blank" rel="noopener noreferrer"
+               class="focusable group w-full flex items-center gap-3 px-3.5 py-3 rounded-xl bg-slate-800/40 hover:bg-slate-800 text-slate-300 hover:text-white transition font-medium border border-slate-800 hover:border-blue-500/40">
+                <i class="fa-brands fa-github text-lg w-6 text-center text-slate-400 group-hover:text-blue-400 transition"></i>
+                <span class="hidden lg:block text-left leading-tight">
+                    <span class="block text-[10px] uppercase tracking-wider text-slate-500 group-hover:text-slate-400 transition">Desarrollado por</span>
+                    <span data-author-name class="font-bold text-sm text-slate-200 group-hover:text-blue-400 transition">IGNOPS</span>
+                </span>
+            </a>
+
+            <div class="hidden lg:block space-y-4">
+                <div id="clock-display" class="text-xl font-bold text-center tracking-wider text-slate-300">00:00</div>
+                <div class="bg-slate-800/40 p-3 rounded-xl border border-slate-800 text-xs text-slate-400 space-y-1.5">
+                    <div class="font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
+                        <i class="fa-solid fa-gamepad text-blue-400"></i> Control Remoto
+                    </div>
+                    <div class="flex justify-between"><span>Navegar:</span> <span class="font-mono text-slate-200">Flechas</span></div>
+                    <div class="flex justify-between"><span>Seleccionar:</span> <span class="font-mono text-slate-200">Enter</span></div>
+                    <div class="flex justify-between"><span>Volver:</span> <span class="font-mono text-slate-200">Esc / Bksp</span></div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Display Area -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden relative">
+        
+        <!-- Top Status & Search Bar (Visible in Grid views) -->
+        <header id="top-bar" class="h-16 px-8 flex items-center justify-between border-b border-slate-800/60 bg-slate-900/30 backdrop-blur-sm z-20">
+            <div class="flex items-center gap-3">
+                <span id="current-playlist-tag" class="px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs font-semibold uppercase tracking-wider">
+                    Categoría: General
+                </span>
+                <span id="channel-count" class="text-xs text-slate-400 font-medium">0 Canales</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <a data-author-link href="#" target="_blank" rel="noopener noreferrer"
+                   class="focusable hidden md:flex items-center gap-2 text-xs text-slate-300 bg-slate-800/60 hover:bg-slate-700/60 px-3 py-1.5 rounded-lg border border-slate-700/50 hover:border-blue-500/40 transition">
+                    <i class="fa-brands fa-github text-blue-400"></i>
+                    <span data-author-name>IGNOPS</span>
+                </a>
+                <div id="remote-indicator" class="flex items-center gap-2 text-xs text-slate-400 bg-slate-800/60 px-3 py-1.5 rounded-lg border border-slate-700/50">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>Modo Control Remoto Activo</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- VIEW 1: HOME DASHBOARD -->
+        <section id="view-home" class="view-panel flex-1 overflow-y-auto p-6 lg:p-8 space-y-8">
+            <!-- Hero Spotlight -->
+            <div class="relative rounded-2xl overflow-hidden bg-gradient-to-r from-blue-900/40 via-slate-900 to-indigo-950/40 border border-slate-800 p-8 flex flex-col justify-end min-h-[260px] shadow-2xl">
+                <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-500/10 via-transparent to-transparent"></div>
+                <div class="relative z-10 max-w-2xl space-y-3">
+                    <span class="px-2.5 py-1 rounded-md bg-blue-600 text-white text-xs font-bold uppercase tracking-wider">Recomendado</span>
+                    <h2 class="text-3xl lg:text-4xl font-extrabold text-white tracking-tight">IPTV Abierta & Gratuita</h2>
+                    <p class="text-slate-300 text-sm leading-relaxed">Disfruta de miles de canales de televisión pública de todo el mundo en streaming continuo mediante el repositorio abierto <code class="text-blue-400 bg-slate-800/80 px-1.5 py-0.5 rounded">iptv-org</code>.</p>
+                    <div class="pt-2 flex gap-4">
+                        <button onclick="quickPlayFeatured()" class="focusable px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold flex items-center gap-2 shadow-lg shadow-blue-600/30 border border-blue-400">
+                            <i class="fa-solid fa-play"></i> Ver Noticias Ahora
+                        </button>
+                        <button onclick="switchView('categories')" class="focusable px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold border border-slate-700">
+                            Explorar Categorías
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Categories Quick Grid -->
+            <div>
+                <h3 class="text-lg font-bold text-slate-200 mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-fire text-blue-500"></i> Categorías Populares
+                </h3>
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="home-categories-grid">
+                    <!-- Dynamic categories loaded by JS -->
+                </div>
+            </div>
+
+            <!-- Recently Added or Featured Channels Slider -->
+            <div>
+                <h3 class="text-lg font-bold text-slate-200 mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-star text-amber-400"></i> Canales Destacados
+                </h3>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4" id="featured-channels-grid">
+                    <!-- Featured channels inserted by JS -->
+                </div>
+            </div>
+        </section>
+
+        <!-- VIEW 2: LIVE TV CHANNEL GRID -->
+        <section id="view-livetv" class="view-panel hidden flex-1 overflow-y-auto p-6 lg:p-8">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-white flex items-center gap-3">
+                    <i class="fa-solid fa-tv text-blue-500"></i> Parilla de Canales
+                </h2>
+                <!-- Filter Pill Group -->
+                <div class="flex items-center gap-2 bg-slate-900/80 p-1 rounded-xl border border-slate-800" id="language-filter">
+                    <button onclick="filterByLang('all')" class="focusable px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white border border-transparent active-pill">Todos</button>
+                    <button onclick="filterByLang('spa')" class="focusable px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white border border-transparent">Español</button>
+                    <button onclick="filterByLang('eng')" class="focusable px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white border border-transparent">Inglés</button>
+                </div>
+            </div>
+
+            <!-- Channels Grid Container -->
+            <div id="channels-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                <!-- Loaded dynamically -->
+            </div>
+        </section>
+
+        <!-- VIEW 3: CATEGORIES -->
+        <section id="view-categories" class="view-panel hidden flex-1 overflow-y-auto p-6 lg:p-8">
+            <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+                <i class="fa-solid fa-layer-group text-blue-500"></i> Seleccionar Playlist de iptv-org
+            </h2>
+            <div id="categories-full-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                <!-- Categories loaded via JS -->
+            </div>
+        </section>
+
+        <!-- VIEW 4: SEARCH -->
+        <section id="view-search" class="view-panel hidden flex-1 overflow-y-auto p-6 lg:p-8 space-y-6">
+            <div class="max-w-2xl mx-auto space-y-4">
+                <h2 class="text-2xl font-bold text-white text-center">Buscar Canales en Vivo</h2>
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg"></i>
+                    <input type="text" id="search-input" placeholder="Escribe el nombre de un canal, país o tema..." 
+                        class="focusable w-full bg-slate-900 border border-slate-700/80 rounded-2xl py-4 pl-12 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-lg">
+                </div>
+            </div>
+            <div id="search-results-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 pt-4">
+                <!-- Dynamic search results -->
+            </div>
+        </section>
+
+        <!-- VIEW 5: FAVORITES -->
+        <section id="view-favorites" class="view-panel hidden flex-1 overflow-y-auto p-6 lg:p-8">
+            <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+                <i class="fa-solid fa-heart text-red-500"></i> Mis Canales Favoritos
+            </h2>
+            <div id="favorites-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                <!-- Favorites list -->
+            </div>
+        </section>
+
+        <!-- VIEW 6: SETTINGS -->
+        <section id="view-settings" class="view-panel hidden flex-1 overflow-y-auto p-6 lg:p-8 space-y-6">
+            <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+                <i class="fa-solid fa-gear text-blue-500"></i> Configuración de IPTV
+            </h2>
+            <div class="max-w-2xl space-y-6">
+                <!-- Custom M3U Playlist Input -->
+                <div class="bg-slate-900/60 p-6 rounded-2xl border border-slate-800 space-y-4">
+                    <h3 class="text-lg font-semibold text-white">Cargar Lista M3U Personalizada</h3>
+                    <p class="text-sm text-slate-400">Ingresa la dirección URL de cualquier lista M3U o M3U8 pública para cargar tus propios canales.</p>
+                    <div class="flex gap-3">
+                        <input type="text" id="custom-m3u-url" placeholder="https://ejemplo.com/lista.m3u" 
+                            class="focusable flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none">
+                        <button onclick="loadCustomM3U()" class="focusable px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm border border-blue-400">
+                            Cargar Lista
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Playback Options -->
+                <div class="bg-slate-900/60 p-6 rounded-2xl border border-slate-800 space-y-4">
+                    <h3 class="text-lg font-semibold text-white">Opciones de Reproducción</h3>
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="text-sm font-medium text-slate-200">Reproducción Automática</div>
+                            <div class="text-xs text-slate-400">Iniciar video inmediatamente al seleccionar un canal</div>
+                        </div>
+                        <input type="checkbox" id="autoplay-toggle" checked class="focusable h-5 w-5 rounded border-slate-700 bg-slate-900 text-blue-600">
+                    </div>
+                </div>
+
+                <!-- About the Developer (IGNOPS) -->
+                <div class="bg-slate-900/60 p-6 rounded-2xl border border-slate-800 space-y-4">
+                    <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+                        <i class="fa-brands fa-github text-blue-400"></i> Acerca del Desarrollador
+                    </h3>
+                    <div class="flex items-center gap-4">
+                        <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-slate-700 to-slate-800 border border-slate-700 flex items-center justify-center text-2xl text-white flex-shrink-0">
+                            <i class="fa-brands fa-github"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <div data-author-name class="text-lg font-bold text-white truncate">IGNOPS</div>
+                            <a data-author-link href="#" target="_blank" rel="noopener noreferrer"
+                               class="text-xs text-blue-400 hover:text-blue-300 hover:underline break-all">
+                                github.com/IGNOPS
+                            </a>
+                        </div>
+                    </div>
+                    <p class="text-sm text-slate-400">
+                        Este reproductor de IPTV fue desarrollado por <span data-author-name class="font-semibold text-slate-300">IGNOPS</span>.
+                        Si te gusta el proyecto, puedes seguirme o contribuir en mi perfil de GitHub.
+                    </p>
+                    <button onclick="openAuthorProfile()" class="focusable w-full sm:w-auto px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-sm border border-slate-700 hover:border-blue-500/40 flex items-center justify-center gap-2 transition">
+                        <i class="fa-brands fa-github text-lg"></i> Ver perfil de <span data-author-name>IGNOPS</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- EMBEDDED PLAYER OVERLAY CONTAINER -->
+        <div id="player-container" class="fixed inset-0 bg-black z-50 hidden flex flex-col justify-between">
+            <!-- Video Element -->
+            <video id="video-player" class="w-full h-full object-contain"></video>
+
+            <!-- Loading Spinner Overlay -->
+            <div id="player-spinner" class="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm z-10 hidden">
+                <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <div class="text-white font-semibold text-lg" id="spinner-status">Cargando canal...</div>
+            </div>
+
+            <!-- Error Overlay -->
+            <div id="player-error" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 z-20 hidden p-6 text-center">
+                <div class="w-16 h-16 rounded-full bg-red-500/20 border border-red-500 flex items-center justify-center text-red-500 text-2xl mb-4">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <h3 class="text-xl font-bold text-white mb-2">Error de Reproducción</h3>
+                <p id="player-error-msg" class="text-slate-400 max-w-md text-sm mb-6">No se pudo conectar a la señal de este canal. El servidor del canal puede estar fuera de línea o restringido por CORS.</p>
+                
+                <!-- Quick Navigation & Action Buttons for Error Overlay -->
+                <div class="flex flex-wrap justify-center items-center gap-3">
+                    <button onclick="prevChannel()" class="focusable px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-sm font-semibold border border-slate-700 flex items-center gap-2">
+                        <i class="fa-solid fa-backward-step"></i> Canal Anterior
+                    </button>
+                    <button onclick="retryPlayback()" class="focusable px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold border border-blue-400 flex items-center gap-2 shadow-lg shadow-blue-600/30">
+                        <i class="fa-solid fa-rotate-right"></i> Reintentar
+                    </button>
+                    <button onclick="nextChannel()" class="focusable px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-sm font-semibold border border-slate-700 flex items-center gap-2">
+                        Canal Siguiente <i class="fa-solid fa-forward-step"></i>
+                    </button>
+                    <button onclick="closePlayer()" class="focusable px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl text-sm font-semibold border border-slate-800">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+
+            <!-- On-Screen TV Controls & Overlay Info (Auto-hides) -->
+            <div id="player-controls-overlay" class="absolute inset-0 flex flex-col justify-between p-8 bg-gradient-to-b from-black/80 via-transparent to-black/90 opacity-100 transition-opacity duration-300 pointer-events-auto">
+                <!-- Top Header Overlay -->
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-4">
+                        <button onclick="closePlayer()" class="focusable w-10 h-10 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-white flex items-center justify-center border border-slate-600">
+                            <i class="fa-solid fa-arrow-left"></i>
+                        </button>
+                        <div class="flex items-center gap-3">
+                            <img id="player-channel-logo" src="" alt="" class="w-10 h-10 rounded-lg object-contain bg-slate-900 border border-slate-800 hidden">
+                            <div>
+                                <h2 id="player-channel-title" class="text-xl font-bold text-white">Canal</h2>
+                                <span id="player-channel-category" class="text-xs text-blue-400 font-medium">Categoría</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- EPG Toggle Button -->
+                    <button onclick="toggleEPGSidebar()" class="focusable px-4 py-2 bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl text-sm font-medium border border-slate-700 flex items-center gap-2">
+                        <i class="fa-solid fa-list-ul"></i> Lista de Canales
+                    </button>
+                </div>
+
+                <!-- Bottom Controls Overlay -->
+                <div class="space-y-4 max-w-4xl mx-auto w-full bg-slate-900/80 backdrop-blur-md p-6 rounded-2xl border border-slate-800">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <button id="btn-play-pause" onclick="togglePlayPause()" class="focusable w-12 h-12 rounded-full bg-blue-600 text-white flex items-center justify-center text-xl shadow-lg shadow-blue-600/40">
+                                <i class="fa-solid fa-pause"></i>
+                            </button>
+                            <button onclick="prevChannel()" class="focusable w-10 h-10 rounded-xl bg-slate-800 text-slate-200 flex items-center justify-center hover:text-white">
+                                <i class="fa-solid fa-backward-step"></i>
+                            </button>
+                            <button onclick="nextChannel()" class="focusable w-10 h-10 rounded-xl bg-slate-800 text-slate-200 flex items-center justify-center hover:text-white">
+                                <i class="fa-solid fa-forward-step"></i>
+                            </button>
+                            <div class="h-6 w-px bg-slate-800"></div>
+                            <button id="btn-fav-player" onclick="toggleCurrentFavorite()" class="focusable w-10 h-10 rounded-xl bg-slate-800 text-slate-400 flex items-center justify-center">
+                                <i class="fa-solid fa-heart"></i>
+                            </button>
+                        </div>
+
+                        <div class="flex items-center gap-4">
+                            <span class="text-xs text-emerald-400 flex items-center gap-1.5 font-semibold bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+                                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> EN VIVO
+                            </span>
+                            <button onclick="toggleFullscreen()" class="focusable w-10 h-10 rounded-xl bg-slate-800 text-slate-200 flex items-center justify-center hover:text-white">
+                                <i class="fa-solid fa-expand"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EPG Sidebar Overlay in Player -->
+            <div id="player-epg-sidebar" class="absolute right-0 top-0 bottom-0 w-80 bg-slate-950/95 backdrop-blur-xl border-l border-slate-800 z-30 transform translate-x-full transition-transform duration-300 p-4 flex flex-col">
+                <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+                    <h3 class="font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-list"></i> Guía de Canales
+                    </h3>
+                    <button onclick="toggleEPGSidebar()" class="text-slate-400 hover:text-white p-1">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+                <div id="epg-channels-list" class="flex-1 overflow-y-auto space-y-2 pr-1">
+                    <!-- EPG channel list -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+            const APP_AUTHOR = {
+            name: 'IGNOPS',
+            github: 'https://github.com/IGNOPS'
+        };
+
+        /**
+         * Abre el perfil de GitHub del autor en una nueva pestaña.
+         * Se puede llamar desde cualquier botón con onclick="openAuthorProfile()"
+         */
+        function openAuthorProfile() {
+            window.open(APP_AUTHOR.github, '_blank', 'noopener,noreferrer');
+        }
+
+        /**
+         * Rellena automáticamente todos los elementos marcados con
+         * [data-author-name] y [data-author-link] usando APP_AUTHOR.
+         */
+        function initAuthorProfile() {
+            document.querySelectorAll('[data-author-name]').forEach(el => {
+                el.textContent = APP_AUTHOR.name;
+            });
+            document.querySelectorAll('[data-author-link]').forEach(el => {
+                el.setAttribute('href', APP_AUTHOR.github);
+                el.setAttribute('title', `Ver perfil de GitHub de ${APP_AUTHOR.name}`);
+            });
+        }
+
+        /* =========================================================
+           ESTADO GLOBAL DE LA APP
+           ========================================================= */
+        const iptvCategories = [
+            { id: 'news', name: 'Noticias', icon: 'fa-newspaper', url: 'https://iptv-org.github.io/iptv/categories/news.m3u' },
+            { id: 'movies', name: 'Películas', icon: 'fa-film', url: 'https://iptv-org.github.io/iptv/categories/movies.m3u' },
+            { id: 'animation', name: 'Animación', icon: 'fa-child', url: 'https://iptv-org.github.io/iptv/categories/animation.m3u' },
+            { id: 'sports', name: 'Deportes', icon: 'fa-futbol', url: 'https://iptv-org.github.io/iptv/categories/sports.m3u' },
+            { id: 'music', name: 'Música', icon: 'fa-music', url: 'https://iptv-org.github.io/iptv/categories/music.m3u' },
+            { id: 'documentary', name: 'Documentales', icon: 'fa-book', url: 'https://iptv-org.github.io/iptv/categories/documentary.m3u' },
+            { id: 'entertainment', name: 'Entretenimiento', icon: 'fa-masks-theater', url: 'https://iptv-org.github.io/iptv/categories/entertainment.m3u' },
+            { id: 'education', name: 'Educación', icon: 'fa-graduation-cap', url: 'https://iptv-org.github.io/iptv/categories/education.m3u' }
+        ];
+
+        let currentChannels = [];
+        let filteredChannels = [];
+        let favoriteChannels = JSON.parse(localStorage.getItem('iptv_favorites') || '[]');
+        let currentChannelIndex = -1;
+        let hlsPlayer = null;
+        let controlsTimeout = null;
+        let activeView = 'home';
+        let focusedElementIndex = 0;
+
+        window.onload = function() {
+            initAuthorProfile();          // <-- Inicializa el nombre/URL de IGNOPS
+            updateClock();
+            setInterval(updateClock, 1000);
+            renderHomeCategories();
+            setupSmartTVNavigation();
+            loadCategory('news'); // Default category
+            setupSearch();
+        };
+
+        function updateClock() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const el = document.getElementById('clock-display');
+            if (el) el.textContent = `${hours}:${minutes}`;
+        }
+
+        function switchView(viewId) {
+            activeView = viewId;
+            document.querySelectorAll('.view-panel').forEach(el => el.classList.add('hidden'));
+            const targetView = document.getElementById(`view-${viewId}`);
+            if (targetView) targetView.classList.remove('hidden');
+
+            // Update sidebar navigation buttons styling
+            document.querySelectorAll('.nav-item').forEach(btn => {
+                if (btn.getAttribute('data-nav') === viewId) {
+                    btn.classList.add('bg-blue-600/20', 'text-blue-400', 'border-blue-500/30');
+                    btn.classList.remove('text-slate-400');
+                } else {
+                    btn.classList.remove('bg-blue-600/20', 'text-blue-400', 'border-blue-500/30');
+                    btn.classList.add('text-slate-400');
+                }
+            });
+
+            if (viewId === 'favorites') renderFavorites();
+            if (viewId === 'categories') renderFullCategories();
+
+            // Auto-focus first focusable item in view
+            setTimeout(() => {
+                const firstFocusable = targetView.querySelector('.focusable');
+                if (firstFocusable) firstFocusable.focus();
+            }, 100);
+        }
+
+        async function fetchAndParseM3U(url) {
+            try {
+                showTopLoading(true);
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Network response error');
+                const text = await response.text();
+                const channels = parseM3UText(text);
+                showTopLoading(false);
+                return channels;
+            } catch (err) {
+                console.error("Error loading M3U:", err);
+                showTopLoading(false);
+                return [];
+            }
+        }
+
+        function parseM3UText(data) {
+            const lines = data.split('\n');
+            const channels = [];
+            let currentChannel = null;
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+                if (line.startsWith('#EXTINF:')) {
+                    currentChannel = {};
+                    // Extract logo
+                    const logoMatch = line.match(/tvg-logo="([^"]*)"/);
+                    if (logoMatch) currentChannel.logo = logoMatch[1];
+
+                    // Extract group/category
+                    const groupMatch = line.match(/group-title="([^"]*)"/);
+                    if (groupMatch) currentChannel.category = groupMatch[1];
+
+                    // Extract Title
+                    const titleParts = line.split(',');
+                    currentChannel.name = titleParts[titleParts.length - 1].trim() || 'Canal Desconocido';
+                    currentChannel.id = 'ch_' + Math.random().toString(36).substr(2, 9);
+                } else if (line.length > 0 && !line.startsWith('#') && currentChannel) {
+                    currentChannel.url = line;
+                    channels.push(currentChannel);
+                    currentChannel = null;
+                }
+            }
+            return channels;
+        }
+
+        function showTopLoading(isLoading) {
+            const countEl = document.getElementById('channel-count');
+            if (countEl) countEl.textContent = isLoading ? 'Cargando canales...' : `${filteredChannels.length} Canales`;
+        }
+
+        async function loadCategory(catId) {
+            const category = iptvCategories.find(c => c.id === catId);
+            if (!category) return;
+
+            document.getElementById('current-playlist-tag').textContent = `Categoría: ${category.name}`;
+            currentChannels = await fetchAndParseM3U(category.url);
+            filteredChannels = [...currentChannels];
+            
+            renderChannelsGrid(filteredChannels, 'channels-grid');
+            renderFeaturedGrid(currentChannels.slice(0, 6));
+            showTopLoading(false);
+        }
+
+        function renderHomeCategories() {
+            const container = document.getElementById('home-categories-grid');
+            if (!container) return;
+
+            container.innerHTML = iptvCategories.slice(0, 6).map(cat => `
+                <button onclick="selectCategoryAndSwitch('${cat.id}')" class="focusable bg-tv-card hover:bg-slate-800/80 p-5 rounded-2xl border border-tv-border flex flex-col items-center justify-center gap-3 group transition text-center">
+                    <div class="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center text-xl group-hover:scale-110 transition duration-300">
+                        <i class="fa-solid ${cat.icon}"></i>
+                    </div>
+                    <span class="font-semibold text-sm text-slate-200 group-hover:text-white">${cat.name}</span>
+                </button>
+            `).join('');
+        }
+
+        function renderFullCategories() {
+            const container = document.getElementById('categories-full-grid');
+            if (!container) return;
+
+            container.innerHTML = iptvCategories.map(cat => `
+                <button onclick="selectCategoryAndSwitch('${cat.id}')" class="focusable bg-tv-card hover:bg-slate-800/80 p-6 rounded-2xl border border-tv-border flex flex-col items-center justify-center gap-4 group transition text-center">
+                    <div class="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center text-2xl group-hover:scale-110 transition duration-300">
+                        <i class="fa-solid ${cat.icon}"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-base text-white">${cat.name}</h4>
+                        <span class="text-xs text-slate-400">Ver lista M3U</span>
+                    </div>
+                </button>
+            `).join('');
+        }
+
+        function selectCategoryAndSwitch(catId) {
+            loadCategory(catId);
+            switchView('livetv');
+        }
+
+        function renderFeaturedGrid(channels) {
+            const container = document.getElementById('featured-channels-grid');
+            if (!container) return;
+            container.innerHTML = channels.map((ch, idx) => createChannelCardHtml(ch, idx, 'featured')).join('');
+        }
+
+        function renderChannelsGrid(channels, containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            if (channels.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full py-16 text-center text-slate-500">
+                        <i class="fa-solid fa-tv-slash text-4xl mb-3"></i>
+                        <p class="text-base font-medium">No se encontraron canales en esta categoría</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = channels.map((ch, idx) => createChannelCardHtml(ch, idx, containerId)).join('');
+        }
+
+        function createChannelCardHtml(channel, index, prefix) {
+            const isFav = favoriteChannels.some(f => f.url === channel.url);
+            const fallbackImg = `https://placehold.co/300x180/1e293b/64748b?text=${encodeURIComponent(channel.name.slice(0, 10))}`;
+            
+            return `
+                <div tabindex="0" onclick="playChannelByIndex(${index})" class="focusable channel-card group bg-tv-card hover:bg-slate-800/80 rounded-2xl border border-tv-border overflow-hidden cursor-pointer flex flex-col justify-between transition">
+                    <div class="relative h-28 bg-slate-950 flex items-center justify-center p-3 border-b border-slate-800/60">
+                        <img src="${channel.logo || fallbackImg}" 
+                             onerror="this.onerror=null; this.src='${fallbackImg}';" 
+                             alt="${channel.name}" 
+                             class="max-h-full max-w-full object-contain group-hover:scale-105 transition duration-300">
+                        <button onclick="event.stopPropagation(); toggleFavorite('${channel.url}')" class="absolute top-2 right-2 w-8 h-8 rounded-full bg-slate-900/80 hover:bg-slate-800 flex items-center justify-center text-xs ${isFav ? 'text-red-500' : 'text-slate-400'} border border-slate-700">
+                            <i class="fa-solid fa-heart"></i>
+                        </button>
+                    </div>
+                    <div class="p-3">
+                        <h4 class="font-bold text-sm text-slate-200 group-hover:text-blue-400 truncate">${channel.name}</h4>
+                        <span class="text-xs text-slate-500 truncate block">${channel.category || 'En vivo'}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function playChannelByIndex(index) {
+            if (index < 0 || index >= filteredChannels.length) return;
+            currentChannelIndex = index;
+            const channel = filteredChannels[index];
+            openPlayerWithStream(channel);
+        }
+
+        function openPlayerWithStream(channel) {
+            const container = document.getElementById('player-container');
+            const video = document.getElementById('video-player');
+            const spinner = document.getElementById('player-spinner');
+            const errorOverlay = document.getElementById('player-error');
+
+            container.classList.remove('hidden');
+            spinner.classList.remove('hidden');
+            errorOverlay.classList.add('hidden');
+
+            document.getElementById('player-channel-title').textContent = channel.name;
+            document.getElementById('player-channel-category').textContent = channel.category || 'Streaming HLS';
+
+            // Logo handling
+            const logoEl = document.getElementById('player-channel-logo');
+            if (channel.logo) {
+                logoEl.src = channel.logo;
+                logoEl.classList.remove('hidden');
+            } else {
+                logoEl.classList.add('hidden');
+            }
+
+            // Check favorite state for player button
+            updatePlayerFavButton(channel);
+
+            // Destroy previous HLS instance
+            if (hlsPlayer) {
+                hlsPlayer.destroy();
+                hlsPlayer = null;
+            }
+
+            // Initialize HLS.js
+            if (Hls.isSupported() && channel.url.includes('.m3u8')) {
+                hlsPlayer = new Hls({
+                    enableWorker: true,
+                    lowLatencyMode: true
+                });
+                hlsPlayer.loadSource(channel.url);
+                hlsPlayer.attachMedia(video);
+                hlsPlayer.on(Hls.Events.MANIFEST_PARSED, function() {
+                    spinner.classList.add('hidden');
+                    video.play().catch(e => console.log("Autoplay blocked:", e));
+                });
+                hlsPlayer.on(Hls.Events.ERROR, function(event, data) {
+                    if (data.fatal) {
+                        spinner.classList.add('hidden');
+                        errorOverlay.classList.remove('hidden');
+                    }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // Native HLS (Safari)
+                video.src = channel.url;
+                video.addEventListener('loadedmetadata', function() {
+                    spinner.classList.add('hidden');
+                    video.play();
+                });
+            } else {
+                // Fallback direct video source
+                video.src = channel.url;
+                video.play().then(() => spinner.classList.add('hidden'))
+                          .catch(() => {
+                              spinner.classList.add('hidden');
+                              errorOverlay.classList.remove('hidden');
+                          });
+            }
+
+            resetControlsTimeout();
+            renderEPGSidebar();
+        }
+
+        function closePlayer() {
+            const container = document.getElementById('player-container');
+            const video = document.getElementById('video-player');
+            container.classList.add('hidden');
+            video.pause();
+            if (hlsPlayer) {
+                hlsPlayer.destroy();
+                hlsPlayer = null;
+            }
+        }
+
+        function togglePlayPause() {
+            const video = document.getElementById('video-player');
+            const btn = document.getElementById('btn-play-pause');
+            if (video.paused) {
+                video.play();
+                btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+            } else {
+                video.pause();
+                btn.innerHTML = '<i class="fa-solid fa-play"></i>';
+            }
+        }
+
+        function nextChannel() {
+            if (filteredChannels.length === 0) return;
+            currentChannelIndex = (currentChannelIndex + 1) % filteredChannels.length;
+            playChannelByIndex(currentChannelIndex);
+        }
+
+        function prevChannel() {
+            if (filteredChannels.length === 0) return;
+            currentChannelIndex = (currentChannelIndex - 1 + filteredChannels.length) % filteredChannels.length;
+            playChannelByIndex(currentChannelIndex);
+        }
+
+        function retryPlayback() {
+            if (currentChannelIndex >= 0) {
+                playChannelByIndex(currentChannelIndex);
+            }
+        }
+
+        function toggleFullscreen() {
+            const container = document.getElementById('player-container');
+            if (!document.fullscreenElement) {
+                container.requestFullscreen().catch(err => console.log(err));
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        function toggleEPGSidebar() {
+            const sidebar = document.getElementById('player-epg-sidebar');
+            sidebar.classList.toggle('translate-x-full');
+        }
+
+        function renderEPGSidebar() {
+            const list = document.getElementById('epg-channels-list');
+            if (!list) return;
+
+            list.innerHTML = filteredChannels.map((ch, i) => `
+                <div onclick="playChannelByIndex(${i})" class="p-3 rounded-xl hover:bg-slate-800 border border-transparent cursor-pointer ${i === currentChannelIndex ? 'bg-blue-600/20 border-blue-500/40 text-blue-400' : 'text-slate-300'} flex items-center gap-3">
+                    <span class="text-xs font-mono w-6 text-slate-500">${i + 1}</span>
+                    <span class="font-medium text-sm truncate flex-1">${ch.name}</span>
+                </div>
+            `).join('');
+        }
+
+        function resetControlsTimeout() {
+            const overlay = document.getElementById('player-controls-overlay');
+            overlay.style.opacity = '1';
+            clearTimeout(controlsTimeout);
+            controlsTimeout = setTimeout(() => {
+                const sidebar = document.getElementById('player-epg-sidebar');
+                if (sidebar.classList.contains('translate-x-full')) {
+                    overlay.style.opacity = '0';
+                }
+            }, 5000);
+        }
+
+        document.getElementById('player-container').addEventListener('mousemove', resetControlsTimeout);
+
+        function toggleFavorite(url) {
+            const index = favoriteChannels.findIndex(f => f.url === url);
+            if (index >= 0) {
+                favoriteChannels.splice(index, 1);
+            } else {
+                const channel = currentChannels.find(c => c.url === url) || filteredChannels.find(c => c.url === url);
+                if (channel) favoriteChannels.push(channel);
+            }
+            localStorage.setItem('iptv_favorites', JSON.stringify(favoriteChannels));
+            
+            // Re-render current view if needed
+            if (activeView === 'livetv') renderChannelsGrid(filteredChannels, 'channels-grid');
+            if (activeView === 'favorites') renderFavorites();
+        }
+
+        function toggleCurrentFavorite() {
+            if (currentChannelIndex >= 0 && filteredChannels[currentChannelIndex]) {
+                const ch = filteredChannels[currentChannelIndex];
+                toggleFavorite(ch.url);
+                updatePlayerFavButton(ch);
+            }
+        }
+
+        function updatePlayerFavButton(channel) {
+            const isFav = favoriteChannels.some(f => f.url === channel.url);
+            const btn = document.getElementById('btn-fav-player');
+            if (btn) {
+                btn.className = `focusable w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center ${isFav ? 'text-red-500' : 'text-slate-400'}`;
+            }
+        }
+
+        function renderFavorites() {
+            renderChannelsGrid(favoriteChannels, 'favorites-grid');
+        }
+
+        function setupSearch() {
+            const input = document.getElementById('search-input');
+            if (!input) return;
+
+            input.addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase().trim();
+                if (!query) {
+                    renderChannelsGrid([], 'search-results-grid');
+                    return;
+                }
+                const results = currentChannels.filter(c => c.name.toLowerCase().includes(query));
+                renderChannelsGrid(results, 'search-results-grid');
+            });
+        }
+
+        function quickPlayFeatured() {
+            switchView('livetv');
+            if (filteredChannels.length > 0) playChannelByIndex(0);
+        }
+
+        async function loadCustomM3U() {
+            const input = document.getElementById('custom-m3u-url');
+            const url = input.value.trim();
+            if (!url) return;
+
+            currentChannels = await fetchAndParseM3U(url);
+            filteredChannels = [...currentChannels];
+            document.getElementById('current-playlist-tag').textContent = 'Lista Personalizada';
+            switchView('livetv');
+        }
+
+        function setupSmartTVNavigation() {
+            document.addEventListener('keydown', (e) => {
+                const playerContainer = document.getElementById('player-container');
+                const isPlayerOpen = !playerContainer.classList.contains('hidden');
+
+                if (isPlayerOpen) {
+                    const errorOverlay = document.getElementById('player-error');
+                    const isErrorShowing = !errorOverlay.classList.contains('hidden');
+
+                    // If error overlay is showing, allow TV remote navigation between error action buttons
+                    if (isErrorShowing) {
+                        const errorFocusables = Array.from(errorOverlay.querySelectorAll('.focusable'));
+                        if (errorFocusables.length > 0) {
+                            let currentFocus = document.activeElement;
+                            let currentIndex = errorFocusables.indexOf(currentFocus);
+
+                            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                                e.preventDefault();
+                                const nextIndex = (currentIndex + 1) % errorFocusables.length;
+                                errorFocusables[nextIndex].focus();
+                                return;
+                            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                                e.preventDefault();
+                                const prevIndex = (currentIndex - 1 + errorFocusables.length) % errorFocusables.length;
+                                errorFocusables[prevIndex].focus();
+                                return;
+                            }
+                        }
+                    }
+
+                    // Controls inside player view
+                    if (e.key === 'Escape' || e.key === 'Backspace') {
+                        closePlayer();
+                    } else if (e.key === 'ArrowLeft') {
+                        prevChannel();
+                    } else if (e.key === 'ArrowRight') {
+                        nextChannel();
+                    } else if (e.key === ' ') {
+                        togglePlayPause();
+                    }
+                    return;
+                }
+
+                // Grid Navigation for Smart TV Remote
+                const focusables = Array.from(document.querySelectorAll('.view-panel:not(.hidden) .focusable, #sidebar .focusable'));
+                if (focusables.length === 0) return;
+
+                let currentFocus = document.activeElement;
+                let currentIndex = focusables.indexOf(currentFocus);
+
+                if (currentIndex === -1) {
+                    focusables[0].focus();
+                    return;
+                }
+
+                if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    const nextIndex = (currentIndex + 1) % focusables.length;
+                    focusables[nextIndex].focus();
+                } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    const prevIndex = (currentIndex - 1 + focusables.length) % focusables.length;
+                    focusables[prevIndex].focus();
+                } else if (e.key === 'Backspace' || e.key === 'Escape') {
+                    switchView('home');
+                }
+            });
+        }
+    </script>
+</body>
+</html>
